@@ -183,10 +183,6 @@ async function handleIyzi3ds(req, res, pathname) {
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   if (req.method === 'GET' && pathname === '/health') return json(res, 200, { status: 'ok' });
-  if (req.method === 'POST' && pathname === '/odeme') { await handlePaytr(req, res); return; }
-  if (req.method === 'POST' && /^\/paytr\/3ds\/[^/]+$/.test(pathname)) { await handlePaytr3ds(req, res, pathname); return; }
-  if (['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(pathname)) { await handleIyzi(req, res, pathname); return; }
-  if (req.method === 'POST' && /^\/iyzico\/3ds\/.+$/.test(pathname)) { await handleIyzi3ds(req, res, pathname); return; }
   const scoped = scopedProvider(pathname);
   if (scoped?.id === 'paytr') {
     if (req.method === 'POST' && scoped.pathname === '/odeme') { await handlePaytr(req, res, scoped.mountPath); return; }

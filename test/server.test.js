@@ -5,6 +5,8 @@ import { server } from '../src/server.js';
 
 server.listen(0); await once(server, 'listening');
 const base = `http://127.0.0.1:${server.address().port}`;
+const paytrBase = `${base}/providers/paytr`;
+const iyziBase = `${base}/providers/iyzico`;
 const iyziHeaders = { authorization: 'IYZWSv2 mock-signature', 'content-type': 'application/json' };
 
 function paytrRequest(overrides = {}) {
@@ -28,18 +30,18 @@ test('health check is available', async () => {
 });
 
 test('PayTR non-3D success uses its sync response', async () => {
-  const response = await fetch(`${base}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ sync_mode: '1' }) });
+  const response = await fetch(`${paytrBase}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ sync_mode: '1' }) });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).status, 'success');
 });
 
 test('PayTR magic CVV returns its documented callback failure message in sync mode', async () => {
-  const response = await fetch(`${base}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ sync_mode: '1', cvv: '910' }) });
+  const response = await fetch(`${paytrBase}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ sync_mode: '1', cvv: '910' }) });
   const result = await response.json(); assert.equal(result.status, 'failed'); assert.match(result.msg, /3D Secure/);
 });
 
 test('PayTR 3-D page completes after its verification code', async () => {
-  const initialized = await fetch(`${base}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ non_3d: '0' }) });
+  const initialized = await fetch(`${paytrBase}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ non_3d: '0' }) });
   const html = await initialized.text(); assert.match(html, /Mock PayTR 3D Secure/);
   const action = html.match(/action="([^"]+)"/)[1];
   const finished = await fetch(`${base}${action}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'code=123456', redirect: 'manual' });
@@ -48,14 +50,14 @@ test('PayTR 3-D page completes after its verification code', async () => {
 });
 
 test('iyzico non-3D payment returns a provider-shaped success response', async () => {
-  const response = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) });
+  const response = await fetch(`${iyziBase}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) });
   const result = await response.json();
   assert.equal(result.status, 'success'); assert.equal(result.conversationId, 'conv-1'); assert.ok(result.paymentId);
 });
 
-test('provider-scoped iyzico route isolates a colliding payment/auth endpoint', async () => {
-  const response = await fetch(`${base}/providers/iyzico/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) });
-  assert.equal((await response.json()).status, 'success');
+test('root provider paths are unavailable, preventing collisions', async () => {
+  const response = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) });
+  assert.equal(response.status, 404);
 });
 
 test('unknown provider mounts are rejected explicitly', async () => {
@@ -65,16 +67,16 @@ test('unknown provider mounts are rejected explicitly', async () => {
 });
 
 test('iyzico official error card and mock magic CVV return deterministic errors', async () => {
-  const cardError = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cardNumber: '4111111111111129' } })) });
+  const cardError = await fetch(`${iyziBase}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cardNumber: '4111111111111129' } })) });
   assert.equal((await cardError.json()).errorCode, '10051');
-  const cvvError = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cvc: '084' } })) });
+  const cvvError = await fetch(`${iyziBase}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cvc: '084' } })) });
   assert.equal((await cvvError.json()).errorCode, '10084');
 });
 
 test('iyzico 3-D initialize then auth completes a payment', async () => {
-  const initialized = await fetch(`${base}/payment/3dsecure/initialize`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ callbackUrl: 'https://merchant.test/callback' })) });
+  const initialized = await fetch(`${iyziBase}/payment/3dsecure/initialize`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ callbackUrl: 'https://merchant.test/callback' })) });
   const init = await initialized.json(); assert.equal(init.status, 'success'); assert.ok(init.threeDSHtmlContent);
-  const completed = await fetch(`${base}/payment/3dsecure/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentId: init.paymentId, conversationId: 'conv-1', conversationData: 'mock-conversation-data' }) });
+  const completed = await fetch(`${iyziBase}/payment/3dsecure/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentId: init.paymentId, conversationId: 'conv-1', conversationData: 'mock-conversation-data' }) });
   const result = await completed.json(); assert.equal(result.status, 'success'); assert.equal(result.mdStatus, 1);
 });
 

@@ -22,14 +22,14 @@ For a local Node process, run `npm start`. No runtime npm packages are required.
 
 ## Provider base URLs
 
-Existing integrations remain available at their upstream-compatible root paths. New integrations should use provider-scoped base URLs to prevent route collisions:
+Provider-scoped URLs are the only payment API surface. They prevent endpoint collisions between facilitators:
 
-| Provider | Root-compatible base URL | Collision-safe base URL |
-| --- | --- | --- |
-| PayTR | `http://mock-pos:8080` | `http://mock-pos:8080/providers/paytr` |
-| iyzico | `http://mock-pos:8080` | `http://mock-pos:8080/providers/iyzico` |
+| Provider | Base URL |
+| --- | --- |
+| PayTR | `http://mock-pos:8080/providers/paytr` |
+| iyzico | `http://mock-pos:8080/providers/iyzico` |
 
-For example, an iyzico client calling `/payment/auth` can instead use base URL `http://mock-pos:8080/providers/iyzico`, producing `POST /providers/iyzico/payment/auth`. A future provider with that same endpoint must be mounted at `http://mock-pos:8080/providers/<provider-id>`. See [the provider integration guide](docs/ADDING_PROVIDER.md).
+For example, an iyzico client calling `/payment/auth` uses base URL `http://mock-pos:8080/providers/iyzico`, producing `POST /providers/iyzico/payment/auth`. Root payment paths such as `/payment/auth` and `/odeme` intentionally return `404`. A future provider with that same endpoint must be mounted at `http://mock-pos:8080/providers/<provider-id>`. See [the provider integration guide](docs/ADDING_PROVIDER.md).
 
 ## Test controls
 
@@ -44,7 +44,7 @@ The full provider test-card catalog and the mock-only magic CVV error controls a
 Point the PayTR form action to:
 
 ```text
-POST http://mock-pos:8080/odeme
+POST http://mock-pos:8080/providers/paytr/odeme
 ```
 
 The endpoint accepts the documented Direct API form payload, including `merchant_id`, `paytr_token`, `user_ip`, `merchant_oid`, `email`, `payment_amount`, `payment_type`, `installment_count`, `non_3d`, `user_address`, `user_phone`, and `user_basket`.
@@ -60,9 +60,9 @@ Use a JSON request and an `Authorization` header beginning with `IYZWSv2 `, just
 
 | Flow | Endpoint |
 | --- | --- |
-| Non-3D authorization | `POST /payment/auth` |
-| Start 3-D | `POST /payment/3dsecure/initialize` |
-| Finalize 3-D | `POST /payment/3dsecure/auth` or `POST /payment/v2/3dsecure/auth` |
+| Non-3D authorization | `POST /providers/iyzico/payment/auth` |
+| Start 3-D | `POST /providers/iyzico/payment/3dsecure/initialize` |
+| Finalize 3-D | `POST /providers/iyzico/payment/3dsecure/auth` or `POST /providers/iyzico/payment/v2/3dsecure/auth` |
 
 The non-3D response contains the commonly consumed iyzico payment fields, including `status`, `paymentId`, `conversationId`, card details, and `itemTransactions`. A failure returns iyzico-style `errorCode: "10051"` and `NOT_SUFFICIENT_FUNDS`.
 
