@@ -1,6 +1,8 @@
 # mock-pos Laravel package
 
-`haluk/mock-pos` is a local payment-gateway mock for Laravel 10–13 integration and feature tests. It implements card-payment endpoints for PayTR, iyzico, Lidio, and Garanti BBVA. It is test infrastructure only; do not enable it in production.
+`haluk/mock-pos` is a local payment-gateway mock for Laravel 10–13 integration and feature tests. It implements card-payment endpoints for PayTR, iyzico, Lidio, and Garanti BBVA. It is test infrastructure only; do not enable it in production or expose it to the internet.
+
+> **Unofficial integration mock.** This project is not affiliated with, endorsed by, or supported by PayTR, iyzico, Lidio, or Garanti BBVA. Provider names are used only to identify the APIs whose request and response contracts are simulated. This repository contains no provider logos, SDK source, checkout assets, live credentials, or real customer/payment data.
 
 ## Install
 
