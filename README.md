@@ -1,116 +1,54 @@
-# mock-pos
+# mock-pos Laravel package
 
-A Docker-ready local mock for the payment endpoints used by [PayTR Direct API](https://dev.paytr.com/en/direkt-api/direkt-api-1-adim) and [iyzico payments](https://docs.iyzico.com/en/getting-started/preliminaries/api-reference-beta/payment-methods/api-non3d). It deliberately implements only card payments: 3-D Secure and non-3D.
+`haluk/mock-pos` is a local payment-gateway mock for Laravel integration and feature tests. It implements card-payment endpoints for PayTR, iyzico, Lidio, and Garanti BBVA. It is test infrastructure only; do not enable it in production.
 
-It is intended for integration and end-to-end tests in Dockerized applications. It is not a payment gateway and must never be exposed as a production payment endpoint.
+## Install
 
-## Run it
-
-Start the service:
+Add the package from its VCS repository while it is unpublished, then require it as a development dependency:
 
 ```sh
-docker compose up --build
+composer require --dev haluk/mock-pos
 ```
 
-The service listens at `http://localhost:8080`. From a sibling Compose service, use `http://mock-pos:8080` (add both services to the same Compose network). Health check:
+Laravel discovers the service provider automatically. To change route mounting or configure PayTR callbacks, publish the config:
 
 ```sh
-curl http://localhost:8080/health
+php artisan vendor:publish --tag=mock-pos-config
 ```
 
-For a local Node process, run `npm start`. No runtime npm packages are required.
+By default routes retain the original API paths:
 
-## Provider base URLs
-
-Provider-scoped URLs are the only payment API surface. They prevent endpoint collisions between facilitators:
-
-| Provider | Base URL |
+| Provider | Base path |
 | --- | --- |
-| PayTR | `http://mock-pos:8080/providers/paytr` |
-| iyzico | `http://mock-pos:8080/providers/iyzico` |
-| Lidio | `http://mock-pos:8080/providers/lidio` |
-| Garanti BBVA | `http://mock-pos:8080/providers/garanti` |
+| PayTR | `/providers/paytr` |
+| iyzico | `/providers/iyzico` |
+| Lidio | `/providers/lidio` |
+| Garanti BBVA | `/providers/garanti` |
 
-For example, an iyzico client calling `/payment/auth` uses base URL `http://mock-pos:8080/providers/iyzico`, producing `POST /providers/iyzico/payment/auth`. Root payment paths such as `/payment/auth` and `/odeme` intentionally return `404`. A future provider with that same endpoint must be mounted at `http://mock-pos:8080/providers/<provider-id>`. See [the provider integration guide](docs/ADDING_PROVIDER.md).
+Set `MOCK_POS_ROUTE_PREFIX=mock-pos` to mount all package endpoints beneath `/mock-pos` instead. The health check is available at `/health` (or `/mock-pos/health` with a prefix).
 
 ## Test controls
 
-Payments succeed by default. Use a card number ending in `0000` to make a payment fail, or set the request header `X-Mock-Payment-Outcome: failure` / `success` for an explicit per-request result. `MOCK_PAYMENT_OUTCOME=failure` makes all unspecified payments fail.
+Payments succeed by default. A card number ending in `0000`, `X-Mock-Payment-Outcome: failure`, or `MOCK_PAYMENT_OUTCOME=failure` produces a decline. Use the `success` header to override the configured default for one request.
 
-For either hosted 3-D page, enter `123456` to authenticate successfully; any other code fails. This lets browser-based tests exercise both redirects and final authorization.
+Hosted 3-D pages accept `123456`; Garanti accepts `147852`.
 
-The full provider test-card catalog and the mock-only magic CVV error controls are in [TEST_CARDS.md](TEST_CARDS.md).
+## Provider flows
 
-## PayTR Direct API
+The package maintains the Node mock's provider routes and response shapes:
 
-Point the PayTR form action to:
+- PayTR: `POST /providers/paytr/odeme`, refunds at `/odeme/iade`, mock cancellation at `/odeme/iptal`.
+- iyzico: `POST /payment/auth`, `/payment/3dsecure/initialize`, `/payment/3dsecure/auth`, cancel and refund routes.
+- Lidio: `POST /Payment/ProcessPayment`, `/Payment/FinishPaymentProcess`, mock cancel/refund routes.
+- Garanti: XML `POST /VPServlet` and form `POST /servlet/gt3dengine`.
 
-```text
-POST http://mock-pos:8080/providers/paytr/odeme
-```
+See [TEST_CARDS.md](TEST_CARDS.md) for deterministic provider card and CVV errors. See [docs/ADDING_PROVIDER.md](docs/ADDING_PROVIDER.md) for the provider-mounting convention.
 
-The endpoint accepts the documented Direct API form payload, including `merchant_id`, `paytr_token`, `user_ip`, `merchant_oid`, `email`, `payment_amount`, `payment_type`, `installment_count`, `non_3d`, `user_address`, `user_phone`, and `user_basket`.
-
-- Send `non_3d=1` for a non-3D payment. With `sync_mode=1`, the mock replies with PayTR-style JSON (`success` or `failed`). Without sync mode it redirects to `merchant_ok_url` or `merchant_fail_url`.
-- Send `non_3d=0` for 3-D. The response is the mock 3-D page; submitting its code redirects to the supplied success or failure URL.
-- Set `PAYTR_CALLBACK_URL` to forward a URL-encoded PayTR-style callback after completion. For example, in Compose use `http://my-app:3000/paytr/callback`. The mock sends `merchant_oid`, `status`, `total_amount`, `payment_amount`, `test_mode`, `payment_type`, `currency`, and `installment_count`; failed callbacks also include PayTR’s failure fields.
-- To verify request tokens and produce callback hashes, configure both `PAYTR_MERCHANT_KEY` and `PAYTR_MERCHANT_SALT`. The token formula follows PayTR’s Direct API documentation. If they are omitted, tokens are accepted to keep test setup minimal.
-
-## iyzico
-
-Use a JSON request and an `Authorization` header beginning with `IYZWSv2 `, just as iyzico requires. The mock verifies the prefix and required payment fields but intentionally does not validate the cryptographic signature.
-
-| Flow | Endpoint |
-| --- | --- |
-| Non-3D authorization | `POST /providers/iyzico/payment/auth` |
-| Start 3-D | `POST /providers/iyzico/payment/3dsecure/initialize` |
-| Finalize 3-D | `POST /providers/iyzico/payment/3dsecure/auth` or `POST /providers/iyzico/payment/v2/3dsecure/auth` |
-
-The non-3D response contains the commonly consumed iyzico payment fields, including `status`, `paymentId`, `conversationId`, card details, and `itemTransactions`. A failure returns iyzico-style `errorCode: "10051"` and `NOT_SUFFICIENT_FUNDS`.
-
-3-D initialization returns `paymentId` and base64 `threeDSHtmlContent`. Render that content in your test client, submit code `123456`, and the page redirects to `callbackUrl` with `paymentId`, `conversationData`, and `status`. Then call the auth endpoint with `paymentId` to get the final payment result.
-
-## Lidio
-
-Lidio API card payments are available at `http://mock-pos:8080/providers/lidio`. The mock supports Lidio’s API payment flow with a new card (`paymentInstrument: "NewCard"`) only:
-
-| Flow | Endpoint |
-| --- | --- |
-| Non-3D process | `POST /providers/lidio/Payment/ProcessPayment` |
-| Start 3-D process | `POST /providers/lidio/Payment/ProcessPayment` with `paymentType: "3D"` (or `is3DSecure: true`) |
-| Finish 3-D process | `POST /providers/lidio/Payment/FinishPaymentProcess` |
-
-Send `paymentInstrumentInfo.newCard.cardNumber`, plus optional `amount`, `currency`, `merchantPaymentId`, and `returnUrl`. A 3-D start returns `result: "RedirectRequired"`, `paymentId`, and `RedirectForm`; render that HTML, submit code `123456`, then call `FinishPaymentProcess` with `paymentId`. A card ending in `0000`, or mock CVV `051` / `084`, produces deterministic failures. The service aliases `/ProcessPayment` and `/FinishPaymentProcess` under the same provider base URL for clients that use the shorter documented method paths.
-
-## Garanti BBVA Virtual POS
-
-Garanti BBVA uses XML for non-3D and an HTML form for 3-D. Configure the base URL as `http://mock-pos:8080/providers/garanti`.
-
-| Flow | Endpoint |
-| --- | --- |
-| Non-3D sale | `POST /providers/garanti/VPServlet` (`application/xml`) |
-| Start 3-D sale | `POST /providers/garanti/servlet/gt3dengine` (`application/x-www-form-urlencoded`) |
-
-The non-3D XML request must include `Order/OrderID`, `Card/Number`, and `Transaction/Amount`; the response is a Garanti-shaped `GVPSResponse`, with `Transaction/Response/Code` set to `00` on approval. The 3-D form requires `orderid`, `cardnumber`, `txnamount`, `successurl`, and `errorurl`. The mock displays an authentication page; enter Garanti’s published test OTP `147852`. It returns an auto-submitting POST form to `successurl` or `errorurl` with fields such as `mdstatus`, `response`, `procreturncode`, and `orderid`.
-
-## Local verification
+## Development
 
 ```sh
-npm test
-docker compose up --build
+composer install
+composer test
 ```
 
-The test suite covers health, PayTR non-3D and 3-D flows, and iyzico non-3D plus initialize/auth 3-D flows.
-
-## Reversals: cancellation and refunds
-
-All reversal operations are stateful: first create a successful payment in the same mock process. Partial refunds accumulate and cannot exceed the original amount; cancellation is a full reversal and is rejected once any refund is made.
-
-| Provider | Cancel (iptal) | Full / partial refund |
-| --- | --- | --- |
-| PayTR | `POST /providers/paytr/odeme/iptal` (mock extension; PayTR publishes no public cancel endpoint) with `merchant_oid` | `POST /providers/paytr/odeme/iade` with documented `merchant_oid`, `return_amount`, `paytr_token` |
-| iyzico | `POST /providers/iyzico/payment/cancel` with `paymentId` | `POST /providers/iyzico/payment/refund` with `paymentTransactionId`, `price`; `POST /providers/iyzico/v2/payment/refund` with `paymentId`, `price` |
-| Lidio | `POST /providers/lidio/Payment/CancelPayment` (mock extension) with `paymentId` | `POST /providers/lidio/Payment/RefundPayment` (mock extension) with `paymentId`, `amount` |
-| Garanti BBVA | XML `VPServlet` request with `Transaction/Type` = `cancel` | XML `VPServlet` request with `Transaction/Type` = `refund` and `Transaction/Amount` in kuruş |
-
-The mock’s PayTR and iyzico endpoints follow their published reversal APIs. Garanti uses the documented XML transaction types. Lidio’s public reference does not render reversal request details, so its two reversal endpoints are explicit mock extensions.
+The package uses an in-memory payment store, so state is intentionally reset between PHP processes. For parallel tests, isolate callers per application instance.

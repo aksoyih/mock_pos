@@ -1,0 +1,32 @@
+{
+  "name": "haluk/mock-pos",
+  "description": "Laravel-local payment gateway mock for PayTR, iyzico, Lidio, and Garanti BBVA.",
+  "keywords": ["laravel", "testing", "payments", "mock", "pos"],
+  "license": "MIT",
+  "type": "library",
+  "require": {
+    "php": "^8.2",
+    "illuminate/contracts": "^10.0|^11.0|^12.0",
+    "illuminate/http": "^10.0|^11.0|^12.0",
+    "illuminate/routing": "^10.0|^11.0|^12.0",
+    "illuminate/support": "^10.0|^11.0|^12.0"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^8.0|^9.0|^10.0",
+    "phpunit/phpunit": "^10.0|^11.0"
+  },
+  "autoload": {
+    "psr-4": { "Haluk\\MockPos\\": "src/" }
+  },
+  "autoload-dev": {
+    "psr-4": { "Haluk\\MockPos\\Tests\\": "tests/" }
+  },
+  "extra": {
+    "laravel": { "providers": ["Haluk\\MockPos\\MockPosServiceProvider"] }
+  },
+  "scripts": {
+    "test": "phpunit"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
