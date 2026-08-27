@@ -136,4 +136,38 @@ test('Lidio and Garanti support partial refund through their provider flows', as
   const garantiRefund = await fetch(`${garantiBase}/VPServlet`, { method: 'POST', body: refundXml }); assert.match(await garantiRefund.text(), /<Code>00<\/Code>/);
 });
 
+test('PayTR rejects unknown and over-refund requests', async () => {
+  const unknown = await fetch(`${paytrBase}/odeme/iade`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ merchant_oid: 'missing', return_amount: '1' }) });
+  assert.equal((await unknown.json()).err_no, '005');
+  const order = 'paytr-over-refund'; await fetch(`${paytrBase}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ merchant_oid: order, sync_mode: '1', payment_amount: '5.00' }) });
+  const over = await fetch(`${paytrBase}/odeme/iade`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ merchant_oid: order, return_amount: '5.01' }) });
+  assert.equal((await over.json()).err_no, '009');
+});
+
+test('iyzico Refund V2 supports a full refund and rejects a later cancellation', async () => {
+  const sale = await fetch(`${iyziBase}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paidPrice: 7, price: 7 })) }); const payment = await sale.json();
+  const refund = await fetch(`${iyziBase}/v2/payment/refund`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentId: payment.paymentId, price: 7 }) });
+  assert.equal((await refund.json()).status, 'success');
+  const cancel = await fetch(`${iyziBase}/payment/cancel`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentId: payment.paymentId }) });
+  assert.equal((await cancel.json()).status, 'failure');
+});
+
+test('Lidio refuses finish before 3-D authentication and over-refunds', async () => {
+  const started = await fetch(`${lidioBase}/Payment/ProcessPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(lidioRequest({ paymentType: '3D' })) }); const pending = await started.json();
+  const premature = await fetch(`${lidioBase}/Payment/FinishPaymentProcess`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: pending.paymentId }) });
+  assert.equal((await premature.json()).errorCode, 'ThreeDSecureNotCompleted');
+  const sale = await fetch(`${lidioBase}/Payment/ProcessPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(lidioRequest({ amount: 5 })) }); const payment = await sale.json();
+  const over = await fetch(`${lidioBase}/Payment/RefundPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: payment.paymentId, amount: 6 }) });
+  assert.equal((await over.json()).errorCode, 'InvalidRefundAmount');
+});
+
+test('Garanti rejects failed OTP and refunds exceeding the original amount', async () => {
+  const started = await fetch(`${garantiBase}/servlet/gt3dengine`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ orderid: 'garanti-fail-otp', cardnumber: '4282209004348015', txnamount: '1000', successurl: 'https://merchant.test/ok', errorurl: 'https://merchant.test/fail' }) });
+  const action = (await started.text()).match(/action="([^"]+)"/)[1]; const failed = await fetch(`${base}${action}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'otp=wrong' });
+  assert.match(await failed.text(), /name="mdstatus" value="0"/);
+  const saleXml = '<GVPSRequest><Card><Number>4282209004348015</Number></Card><Order><OrderID>garanti-over</OrderID></Order><Transaction><Type>sales</Type><Amount>1000</Amount></Transaction></GVPSRequest>';
+  await fetch(`${garantiBase}/VPServlet`, { method: 'POST', body: saleXml }); const refundXml = '<GVPSRequest><Order><OrderID>garanti-over</OrderID></Order><Transaction><Type>refund</Type><Amount>1001</Amount></Transaction></GVPSRequest>';
+  const over = await fetch(`${garantiBase}/VPServlet`, { method: 'POST', body: refundXml }); assert.match(await over.text(), /<Code>51<\/Code>/);
+});
+
 test.after(() => server.close());
