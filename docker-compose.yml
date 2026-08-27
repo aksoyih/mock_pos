@@ -1,0 +1,9 @@
+services:
+  mock-pos:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      # Set this when you want PayTR callback notifications forwarded.
+      # PAYTR_CALLBACK_URL: http://host.docker.internal:3000/paytr/callback
