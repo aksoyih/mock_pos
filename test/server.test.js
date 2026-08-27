@@ -53,6 +53,17 @@ test('iyzico non-3D payment returns a provider-shaped success response', async (
   assert.equal(result.status, 'success'); assert.equal(result.conversationId, 'conv-1'); assert.ok(result.paymentId);
 });
 
+test('provider-scoped iyzico route isolates a colliding payment/auth endpoint', async () => {
+  const response = await fetch(`${base}/providers/iyzico/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) });
+  assert.equal((await response.json()).status, 'success');
+});
+
+test('unknown provider mounts are rejected explicitly', async () => {
+  const response = await fetch(`${base}/providers/acmepay/payment/auth`, { method: 'POST' });
+  assert.equal(response.status, 404);
+  assert.match((await response.json()).error, /acmepay/);
+});
+
 test('iyzico official error card and mock magic CVV return deterministic errors', async () => {
   const cardError = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cardNumber: '4111111111111129' } })) });
   assert.equal((await cardError.json()).errorCode, '10051');

@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { scopedProvider } from './providers.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const payments = new Map();
@@ -113,11 +114,10 @@ function paytrComplete(res, p, result) {
   if (result.status === 'failed') url.searchParams.set('fail_message', result.message || 'Mock card declined');
   res.writeHead(302, { location: url.toString() }); res.end();
 }
-function threeDsPage(id) {
-  return `<!doctype html><html><body><h1>Mock PayTR 3D Secure</h1><p>Enter <b>123456</b> to approve. Any other value declines.</p><form method="post" action="/paytr/3ds/${id}"><label>Verification code <input name="code" autofocus></label><button>Complete payment</button></form></body></html>`;
+function threeDsPage(id, mountPath = '') {
+  return `<!doctype html><html><body><h1>Mock PayTR 3D Secure</h1><p>Enter <b>123456</b> to approve. Any other value declines.</p><form method="post" action="${mountPath}/paytr/3ds/${id}"><label>Verification code <input name="code" autofocus></label><button>Complete payment</button></form></body></html>`;
 }
-async function handlePaytr(req, res) {
-  if (req.method !== 'POST' || req.url !== '/odeme') return false;
+async function handlePaytr(req, res, mountPath = '') {
   const p = await form(req);
   const missing = required(p, ['merchant_id', 'paytr_token', 'user_ip', 'merchant_oid', 'email', 'payment_amount', 'payment_type', 'installment_count', 'non_3d', 'user_address', 'user_phone', 'user_basket']);
   if (missing.length) return text(res, 400, `Missing required fields: ${missing.join(', ')}`);
@@ -125,7 +125,7 @@ async function handlePaytr(req, res) {
   const result = paytrResult(req, p);
   if (p.non_3d === '1') return paytrComplete(res, p, result);
   const id = randomUUID(); payments.set(id, { provider: 'paytr', request: p, result });
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(threeDsPage(id)); return true;
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(threeDsPage(id, mountPath)); return true;
 }
 async function handlePaytr3ds(req, res, pathname) {
   const match = pathname.match(/^\/paytr\/3ds\/([^/]+)$/);
@@ -142,10 +142,10 @@ function validIyziRequest(req, input, res) {
   if (missing.length) { json(res, 400, { status: 'failure', errorCode: '10001', errorMessage: `Missing required fields: ${missing.join(', ')}` }); return false; }
   return true;
 }
-function iyziHtml(id) {
-  return `<!doctype html><html><body><h1>Mock iyzico 3D Secure</h1><form method="post" action="/iyzico/3ds/${id}"><label>Verification code <input name="code" autofocus></label><button>Complete payment</button></form><p>Use <b>123456</b> to approve.</p></body></html>`;
+function iyziHtml(id, mountPath = '') {
+  return `<!doctype html><html><body><h1>Mock iyzico 3D Secure</h1><form method="post" action="${mountPath}/iyzico/3ds/${id}"><label>Verification code <input name="code" autofocus></label><button>Complete payment</button></form><p>Use <b>123456</b> to approve.</p></body></html>`;
 }
-async function handleIyzi(req, res, pathname) {
+async function handleIyzi(req, res, pathname, mountPath = '') {
   if (!['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(pathname)) return false;
   if (req.method !== 'POST') return json(res, 405, { status: 'failure', errorMessage: 'Method not allowed' });
   const input = await payload(req);
@@ -164,7 +164,7 @@ async function handleIyzi(req, res, pathname) {
     const id = String(sequence++); const result = iyziResult(req, input);
     if (result.initFail) return json(res, 200, iyziFailure(input, result));
     payments.set(id, { provider: 'iyzico', input, result });
-    return json(res, 200, { status: 'success', locale: input.locale || 'tr', systemTime: now(), conversationId: input.conversationId, paymentId: id, threeDSHtmlContent: Buffer.from(iyziHtml(id)).toString('base64') });
+    return json(res, 200, { status: 'success', locale: input.locale || 'tr', systemTime: now(), conversationId: input.conversationId, paymentId: id, threeDSHtmlContent: Buffer.from(iyziHtml(id, mountPath)).toString('base64') });
   }
   const payment = payments.get(String(input.paymentId));
   if (!payment || payment.provider !== 'iyzico') return json(res, 404, { status: 'failure', errorCode: '10004', errorMessage: 'Payment not found' });
@@ -187,6 +187,16 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && /^\/paytr\/3ds\/[^/]+$/.test(pathname)) { await handlePaytr3ds(req, res, pathname); return; }
   if (['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(pathname)) { await handleIyzi(req, res, pathname); return; }
   if (req.method === 'POST' && /^\/iyzico\/3ds\/.+$/.test(pathname)) { await handleIyzi3ds(req, res, pathname); return; }
+  const scoped = scopedProvider(pathname);
+  if (scoped?.id === 'paytr') {
+    if (req.method === 'POST' && scoped.pathname === '/odeme') { await handlePaytr(req, res, scoped.mountPath); return; }
+    if (req.method === 'POST' && /^\/paytr\/3ds\/[^/]+$/.test(scoped.pathname)) { await handlePaytr3ds(req, res, scoped.pathname); return; }
+  }
+  if (scoped?.id === 'iyzico') {
+    if (['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(scoped.pathname)) { await handleIyzi(req, res, scoped.pathname, scoped.mountPath); return; }
+    if (req.method === 'POST' && /^\/iyzico\/3ds\/.+$/.test(scoped.pathname)) { await handleIyzi3ds(req, res, scoped.pathname); return; }
+  }
+  if (scoped) return json(res, 404, { error: `Unknown provider or endpoint: ${scoped.id}` });
   json(res, 404, { error: 'Not found' });
 });
 if (process.env.NODE_ENV !== 'test') server.listen(PORT, () => console.log(`mock-pos listening on ${PORT}`));

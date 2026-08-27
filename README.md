@@ -20,6 +20,17 @@ curl http://localhost:8080/health
 
 For a local Node process, run `npm start`. No runtime npm packages are required.
 
+## Provider base URLs
+
+Existing integrations remain available at their upstream-compatible root paths. New integrations should use provider-scoped base URLs to prevent route collisions:
+
+| Provider | Root-compatible base URL | Collision-safe base URL |
+| --- | --- | --- |
+| PayTR | `http://mock-pos:8080` | `http://mock-pos:8080/providers/paytr` |
+| iyzico | `http://mock-pos:8080` | `http://mock-pos:8080/providers/iyzico` |
+
+For example, an iyzico client calling `/payment/auth` can instead use base URL `http://mock-pos:8080/providers/iyzico`, producing `POST /providers/iyzico/payment/auth`. A future provider with that same endpoint must be mounted at `http://mock-pos:8080/providers/<provider-id>`. See [the provider integration guide](docs/ADDING_PROVIDER.md).
+
 ## Test controls
 
 Payments succeed by default. Use a card number ending in `0000` to make a payment fail, or set the request header `X-Mock-Payment-Outcome: failure` / `success` for an explicit per-request result. `MOCK_PAYMENT_OUTCOME=failure` makes all unspecified payments fail.
