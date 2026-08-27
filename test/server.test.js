@@ -114,4 +114,26 @@ test('Garanti 3-D form uses the official test OTP and posts a success result', a
   const result = await completed.text(); assert.match(result, /merchant\.test\/garanti-success/); assert.match(result, /name="mdstatus" value="1"/);
 });
 
+test('PayTR supports partial refund and mock cancellation', async () => {
+  const order = 'paytr-reversal'; await fetch(`${paytrBase}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ merchant_oid: order, sync_mode: '1', payment_amount: '10.00' }) });
+  const refunded = await fetch(`${paytrBase}/odeme/iade`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ merchant_id: '1', merchant_oid: order, return_amount: '4.00', paytr_token: 'mock' }) });
+  assert.equal((await refunded.json()).status, 'success');
+  const cancelled = await fetch(`${paytrBase}/odeme/iptal`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ merchant_oid: order }) }); assert.equal((await cancelled.json()).status, 'failed');
+});
+
+test('iyzico supports partial refund and full cancellation', async () => {
+  const sale = await fetch(`${iyziBase}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) }); const payment = await sale.json();
+  const refunded = await fetch(`${iyziBase}/payment/refund`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentTransactionId: payment.itemTransactions[0].paymentTransactionId, price: 3 }) }); assert.equal((await refunded.json()).status, 'success');
+  const secondSale = await fetch(`${iyziBase}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ conversationId: 'cancel-me' })) }); const second = await secondSale.json();
+  const cancelled = await fetch(`${iyziBase}/payment/cancel`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentId: second.paymentId }) }); assert.equal((await cancelled.json()).status, 'success');
+});
+
+test('Lidio and Garanti support partial refund through their provider flows', async () => {
+  const lidioSale = await fetch(`${lidioBase}/Payment/ProcessPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(lidioRequest()) }); const lidioPayment = await lidioSale.json();
+  const lidioRefund = await fetch(`${lidioBase}/Payment/RefundPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: lidioPayment.paymentId, amount: 4 }) }); assert.equal((await lidioRefund.json()).result, 'Success');
+  const saleXml = '<?xml version="1.0"?><GVPSRequest><Card><Number>4282209004348015</Number></Card><Order><OrderID>garanti-refund</OrderID></Order><Transaction><Type>sales</Type><Amount>1000</Amount></Transaction></GVPSRequest>';
+  await fetch(`${garantiBase}/VPServlet`, { method: 'POST', body: saleXml }); const refundXml = '<?xml version="1.0"?><GVPSRequest><Order><OrderID>garanti-refund</OrderID></Order><Transaction><Type>refund</Type><Amount>400</Amount></Transaction></GVPSRequest>';
+  const garantiRefund = await fetch(`${garantiBase}/VPServlet`, { method: 'POST', body: refundXml }); assert.match(await garantiRefund.text(), /<Code>00<\/Code>/);
+});
+
 test.after(() => server.close());

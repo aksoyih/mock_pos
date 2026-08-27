@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 const PROCESS_PATHS = new Set(['/ProcessPayment', '/Payment/ProcessPayment', '/api/Payment/ProcessPayment']);
 const FINISH_PATHS = new Set(['/FinishPaymentProcess', '/Payment/FinishPaymentProcess', '/api/Payment/FinishPaymentProcess']);
+const CANCEL_PATHS = new Set(['/CancelPayment', '/Payment/CancelPayment']);
+const REFUND_PATHS = new Set(['/RefundPayment', '/Payment/RefundPayment']);
 
 function cardFrom(input) {
   return input.paymentInstrumentInfo?.newCard || input.paymentInstrumentInfo?.card || {};
@@ -54,6 +56,14 @@ export function createLidioHandler({ payments, nextPaymentId, json, text, payloa
       const result = payment.threeDCompleted ? payment.result : { result: 'Failed', errorCode: 'ThreeDSecureNotCompleted', errorMessage: '3D Secure authentication is not complete' };
       return json(res, 200, { ...result, paymentId, merchantPaymentId: payment.input.merchantPaymentId, amount: payment.input.amount || payment.input.paymentAmount, currency: payment.input.currency || 'TRY' });
     }
+    if (CANCEL_PATHS.has(pathname) || REFUND_PATHS.has(pathname)) {
+      const input = await payload(req); const payment = payments.get(String(input?.paymentId || input?.PaymentId));
+      if (!payment || payment.provider !== 'lidio' || payment.cancelled) return json(res, 404, { result: 'Failed', errorCode: 'PaymentNotFound', errorMessage: 'Payment not found' });
+      const total = Number(payment.input.amount || payment.input.paymentAmount); payment.refunded ??= 0;
+      if (CANCEL_PATHS.has(pathname)) { if (payment.refunded) return json(res, 400, { result: 'Failed', errorCode: 'PaymentNotCancellable', errorMessage: 'Payment has refunds' }); payment.cancelled = true; return json(res, 200, { result: 'Success', paymentId: input.paymentId, cancelled: true }); }
+      const amount = Number(input?.amount || input?.refundAmount); if (!(amount > 0) || payment.refunded + amount > total) return json(res, 400, { result: 'Failed', errorCode: 'InvalidRefundAmount', errorMessage: 'Refund exceeds remaining amount' });
+      payment.refunded += amount; return json(res, 200, { result: 'Success', paymentId: input.paymentId, refundAmount: amount, remainingAmount: total - payment.refunded });
+    }
     const match = pathname.match(/^\/lidio\/3ds\/([^/]+)$/);
     if (!match) return false;
     const payment = payments.get(match[1]);
@@ -65,5 +75,5 @@ export function createLidioHandler({ payments, nextPaymentId, json, text, payloa
     const url = new URL(returnUrl); url.searchParams.set('paymentId', match[1]); url.searchParams.set('result', payment.threeDCompleted ? 'Success' : 'Failed');
     res.writeHead(302, { location: url.toString() }); res.end(); return true;
   }
-  return { handles: (pathname) => PROCESS_PATHS.has(pathname) || FINISH_PATHS.has(pathname) || /^\/lidio\/3ds\/[^/]+$/.test(pathname), handle };
+  return { handles: (pathname) => PROCESS_PATHS.has(pathname) || FINISH_PATHS.has(pathname) || CANCEL_PATHS.has(pathname) || REFUND_PATHS.has(pathname) || /^\/lidio\/3ds\/[^/]+$/.test(pathname), handle };
 }

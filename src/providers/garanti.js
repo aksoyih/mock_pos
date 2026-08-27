@@ -16,8 +16,15 @@ export function createGarantiHandler({ payments, text, body, form }) {
     if (pathname === XML_PATH) {
       if (req.method !== 'POST') return text(res, 405, 'Method not allowed');
       const input = await body(req); const orderId = tag(input, 'OrderID'); const card = tag(input, 'Number'); const amount = tag(input, 'Amount');
+      const type = tag(input, 'Type').toLowerCase(); const existing = payments.get(`garanti:${orderId}`);
+      if (type === 'refund' || type === 'cancel') {
+        if (!existing || existing.cancelled) return text(res, 200, responseXml({ orderId, card: '', success: false, message: 'Payment not found' }), { 'content-type': 'application/xml; charset=iso-8859-9' });
+        if (type === 'cancel') { if (existing.refunded) return text(res, 200, responseXml({ orderId, card: '', success: false, message: 'Payment cannot be cancelled' }), { 'content-type': 'application/xml; charset=iso-8859-9' }); existing.cancelled = true; return text(res, 200, responseXml({ orderId, card: existing.card, success: true, message: 'Approved' }), { 'content-type': 'application/xml; charset=iso-8859-9' }); }
+        const refund = Number(amount); existing.refunded ??= 0; if (!(refund > 0) || existing.refunded + refund > existing.amount) return text(res, 200, responseXml({ orderId, card: existing.card, success: false, message: 'Refund exceeds remaining amount' }), { 'content-type': 'application/xml; charset=iso-8859-9' }); existing.refunded += refund; return text(res, 200, responseXml({ orderId, card: existing.card, success: true, message: 'Approved' }), { 'content-type': 'application/xml; charset=iso-8859-9' });
+      }
       if (!orderId || !card || !amount) return text(res, 200, responseXml({ orderId, card, success: false, message: 'Required transaction fields are missing' }), { 'content-type': 'application/xml; charset=iso-8859-9' });
       const failed = String(req.headers['x-mock-payment-outcome']) === 'failure' || card.replace(/\s/g, '').endsWith('0000');
+      if (!failed) payments.set(`garanti:${orderId}`, { provider: 'garanti', amount: Number(amount), card, refunded: 0, cancelled: false });
       return text(res, 200, responseXml({ orderId, card, success: !failed, message: failed ? 'Insufficient funds' : 'Approved' }), { 'content-type': 'application/xml; charset=iso-8859-9' });
     }
     if (pathname === THREE_D_PATH) {

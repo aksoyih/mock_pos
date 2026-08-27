@@ -109,6 +109,7 @@ function callbackPaytr(p, result) {
   fetch(target, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(notification) }).catch(() => {});
 }
 function paytrComplete(res, p, result) {
+  if (result.status === 'success') payments.set(`paytr:${p.merchant_oid}`, { provider: 'paytr', request: p, amount: Number(p.payment_amount), refunded: 0, cancelled: false });
   callbackPaytr(p, result);
   if (p.sync_mode === '1') return json(res, 200, result.status === 'success' ? { status: 'success', msg: 'Successful Payment.', utoken: 'mock-utoken', ctoken: 'mock-ctoken' } : { status: 'failed', msg: result.message || 'Mock card declined' });
   const destination = result.status === 'success' ? p.merchant_ok_url : p.merchant_fail_url;
@@ -139,6 +140,14 @@ async function handlePaytr3ds(req, res, pathname) {
   const result = payment.result.status === 'success' && values.code === '123456' ? payment.result : { status: 'failed', code: '2', message: 'Authentication failed' };
   return paytrComplete(res, payment.request, result);
 }
+async function handlePaytrReversal(req, res, pathname) {
+  if (req.method !== 'POST' || !['/odeme/iade', '/odeme/iptal'].includes(pathname)) return false;
+  const input = await form(req); const payment = payments.get(`paytr:${input.merchant_oid}`);
+  if (!payment) return json(res, 200, { status: 'failed', err_no: '005', err_msg: 'merchant_oid ile basarili odeme bulunamadi' });
+  if (pathname.endsWith('iptal')) { if (payment.cancelled || payment.refunded) return json(res, 200, { status: 'failed', err_no: '005', err_msg: 'Payment cannot be cancelled' }); payment.cancelled = true; return json(res, 200, { status: 'success', merchant_oid: input.merchant_oid, cancelled: true }); }
+  const amount = Number(input.return_amount); if (!(amount > 0) || payment.cancelled || payment.refunded + amount > payment.amount) return json(res, 200, { status: 'failed', err_no: '009', err_msg: 'Toplam iade tutari odeme tutarindan fazla olamaz' });
+  payment.refunded += amount; return json(res, 200, { status: 'success', is_test: '1', merchant_oid: input.merchant_oid, return_amount: input.return_amount, reference_no: input.reference_no });
+}
 function validIyziRequest(req, input, res) {
   if (!String(req.headers.authorization || '').startsWith('IYZWSv2 ')) { json(res, 401, { status: 'failure', errorCode: '401', errorMessage: 'Authorization header must start with IYZWSv2' }); return false; }
   const missing = required(input || {}, ['price', 'paidPrice', 'paymentCard', 'buyer', 'billingAddress', 'basketItems']);
@@ -149,9 +158,21 @@ function iyziHtml(id, mountPath = '') {
   return `<!doctype html><html><body><h1>Mock iyzico 3D Secure</h1><form method="post" action="${mountPath}/iyzico/3ds/${id}"><label>Verification code <input name="code" autofocus></label><button>Complete payment</button></form><p>Use <b>123456</b> to approve.</p></body></html>`;
 }
 async function handleIyzi(req, res, pathname, mountPath = '') {
-  if (!['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(pathname)) return false;
+  if (!['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth', '/payment/cancel', '/payment/refund', '/v2/payment/refund'].includes(pathname)) return false;
   if (req.method !== 'POST') return json(res, 405, { status: 'failure', errorMessage: 'Method not allowed' });
   const input = await payload(req);
+  if (['/payment/cancel', '/payment/refund', '/v2/payment/refund'].includes(pathname)) {
+    if (!String(req.headers.authorization || '').startsWith('IYZWSv2 ')) return json(res, 401, { status: 'failure', errorCode: '401', errorMessage: 'Authorization header must start with IYZWSv2' });
+    const entry = input?.paymentTransactionId
+      ? [...payments.entries()].find(([, value]) => value.provider === 'iyzico' && (value.response?.itemTransactions || []).some((item) => item.paymentTransactionId === input.paymentTransactionId))
+      : [...payments.entries()].find(([, value]) => value.provider === 'iyzico' && value.response?.paymentId === String(input?.paymentId));
+    const payment = entry?.[1]; const source = payment?.response;
+    if (!payment || !source || payment.cancelled) return json(res, 200, { status: 'failure', errorCode: '10004', errorMessage: 'Payment not found', errorGroup: 'NOT_FOUND' });
+    payment.refunded ??= 0;
+    if (pathname === '/payment/cancel') { if (payment.refunded) return json(res, 200, { status: 'failure', errorCode: '10014', errorMessage: 'Payment cannot be cancelled', errorGroup: 'BUSINESS' }); payment.cancelled = true; return json(res, 200, { status: 'success', locale: input.locale || 'tr', systemTime: now(), conversationId: input.conversationId, paymentId: source.paymentId, price: source.paidPrice, currency: source.currency, authCode: '123456', hostReference: 'mock-host', cancelHostReference: 'mock-cancel' }); }
+    const amount = Number(input?.price); if (!(amount > 0) || payment.refunded + amount > Number(source.paidPrice)) return json(res, 200, { status: 'failure', errorCode: '10051', errorMessage: 'Refund amount exceeds remaining amount', errorGroup: 'VALIDATION' });
+    payment.refunded += amount; return json(res, 200, { status: 'success', locale: input.locale || 'tr', systemTime: now(), conversationId: input.conversationId, paymentId: source.paymentId, paymentTransactionId: input.paymentTransactionId, price: amount, currency: source.currency, authCode: '123456', hostReference: 'mock-host', refundHostReference: 'mock-refund', retryable: false });
+  }
   if (pathname.endsWith('/auth') && pathname !== '/payment/auth') {
     if (!String(req.headers.authorization || '').startsWith('IYZWSv2 ')) return json(res, 401, { status: 'failure', errorCode: '401', errorMessage: 'Authorization header must start with IYZWSv2' });
     if (!input?.paymentId) return json(res, 400, { status: 'failure', errorCode: '10001', errorMessage: 'Missing required fields: paymentId' });
@@ -191,10 +212,11 @@ const server = createServer(async (req, res) => {
   const scoped = scopedProvider(pathname);
   if (scoped?.id === 'paytr') {
     if (req.method === 'POST' && scoped.pathname === '/odeme') { await handlePaytr(req, res, scoped.mountPath); return; }
+    if (req.method === 'POST' && ['/odeme/iade', '/odeme/iptal'].includes(scoped.pathname)) { await handlePaytrReversal(req, res, scoped.pathname); return; }
     if (req.method === 'POST' && /^\/paytr\/3ds\/[^/]+$/.test(scoped.pathname)) { await handlePaytr3ds(req, res, scoped.pathname); return; }
   }
   if (scoped?.id === 'iyzico') {
-    if (['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(scoped.pathname)) { await handleIyzi(req, res, scoped.pathname, scoped.mountPath); return; }
+    if (['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth', '/payment/cancel', '/payment/refund', '/v2/payment/refund'].includes(scoped.pathname)) { await handleIyzi(req, res, scoped.pathname, scoped.mountPath); return; }
     if (req.method === 'POST' && /^\/iyzico\/3ds\/.+$/.test(scoped.pathname)) { await handleIyzi3ds(req, res, scoped.pathname); return; }
   }
   if (scoped?.id === 'lidio' && lidio.handles(scoped.pathname)) { await lidio.handle(req, res, scoped.pathname, scoped.mountPath); return; }

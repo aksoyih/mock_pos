@@ -101,3 +101,16 @@ docker compose up --build
 ```
 
 The test suite covers health, PayTR non-3D and 3-D flows, and iyzico non-3D plus initialize/auth 3-D flows.
+
+## Reversals: cancellation and refunds
+
+All reversal operations are stateful: first create a successful payment in the same mock process. Partial refunds accumulate and cannot exceed the original amount; cancellation is a full reversal and is rejected once any refund is made.
+
+| Provider | Cancel (iptal) | Full / partial refund |
+| --- | --- | --- |
+| PayTR | `POST /providers/paytr/odeme/iptal` (mock extension; PayTR publishes no public cancel endpoint) with `merchant_oid` | `POST /providers/paytr/odeme/iade` with documented `merchant_oid`, `return_amount`, `paytr_token` |
+| iyzico | `POST /providers/iyzico/payment/cancel` with `paymentId` | `POST /providers/iyzico/payment/refund` with `paymentTransactionId`, `price`; `POST /providers/iyzico/v2/payment/refund` with `paymentId`, `price` |
+| Lidio | `POST /providers/lidio/Payment/CancelPayment` (mock extension) with `paymentId` | `POST /providers/lidio/Payment/RefundPayment` (mock extension) with `paymentId`, `amount` |
+| Garanti BBVA | XML `VPServlet` request with `Transaction/Type` = `cancel` | XML `VPServlet` request with `Transaction/Type` = `refund` and `Transaction/Amount` in kuruş |
+
+The mock’s PayTR and iyzico endpoints follow their published reversal APIs. Garanti uses the documented XML transaction types. Lidio’s public reference does not render reversal request details, so its two reversal endpoints are explicit mock extensions.
