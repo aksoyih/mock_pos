@@ -26,6 +26,8 @@ Payments succeed by default. Use a card number ending in `0000` to make a paymen
 
 For either hosted 3-D page, enter `123456` to authenticate successfully; any other code fails. This lets browser-based tests exercise both redirects and final authorization.
 
+The full provider test-card catalog and the mock-only magic CVV error controls are in [TEST_CARDS.md](TEST_CARDS.md).
+
 ## PayTR Direct API
 
 Point the PayTR form action to:

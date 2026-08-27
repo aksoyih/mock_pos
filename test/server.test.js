@@ -33,6 +33,11 @@ test('PayTR non-3D success uses its sync response', async () => {
   assert.equal((await response.json()).status, 'success');
 });
 
+test('PayTR magic CVV returns its documented callback failure message in sync mode', async () => {
+  const response = await fetch(`${base}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ sync_mode: '1', cvv: '910' }) });
+  const result = await response.json(); assert.equal(result.status, 'failed'); assert.match(result.msg, /3D Secure/);
+});
+
 test('PayTR 3-D page completes after its verification code', async () => {
   const initialized = await fetch(`${base}/odeme`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: paytrRequest({ non_3d: '0' }) });
   const html = await initialized.text(); assert.match(html, /Mock PayTR 3D Secure/);
@@ -46,6 +51,13 @@ test('iyzico non-3D payment returns a provider-shaped success response', async (
   const response = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest()) });
   const result = await response.json();
   assert.equal(result.status, 'success'); assert.equal(result.conversationId, 'conv-1'); assert.ok(result.paymentId);
+});
+
+test('iyzico official error card and mock magic CVV return deterministic errors', async () => {
+  const cardError = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cardNumber: '4111111111111129' } })) });
+  assert.equal((await cardError.json()).errorCode, '10051');
+  const cvvError = await fetch(`${base}/payment/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify(iyziRequest({ paymentCard: { ...iyziRequest().paymentCard, cvc: '084' } })) });
+  assert.equal((await cvvError.json()).errorCode, '10084');
 });
 
 test('iyzico 3-D initialize then auth completes a payment', async () => {
