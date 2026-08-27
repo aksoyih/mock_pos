@@ -1,19 +1,19 @@
 # Adding a payment provider
 
-Each facilitator gets a stable, provider-scoped base URL:
+Each facilitator has a stable Laravel route mount:
 
 ```text
-http://mock-pos:8080/providers/<provider-id>
+/providers/<provider-id>
 ```
 
-This is important because different providers often publish the same endpoint path. For example, a future AcmePay integration using `POST /payment/auth` should configure its base URL as `http://mock-pos:8080/providers/acmepay`; the client will then call `POST /providers/acmepay/payment/auth`. It cannot collide with iyzico’s `POST /providers/iyzico/payment/auth` route.
+The optional `MOCK_POS_ROUTE_PREFIX` config value is prepended to this path. Provider scoping prevents published endpoint collisions: a future AcmePay client calling `/payment/auth` is mounted as `/providers/acmepay/payment/auth`, isolated from `/providers/iyzico/payment/auth`.
 
 ## Integration checklist
 
-1. Add the provider ID and mount path to `src/providers.js`.
-2. Add a provider handler in `src/providers/<provider-id>.js`. Keep validation, endpoint routing, provider response shapes, and test-card rules in that adapter rather than in shared routing.
-3. Register the handler in `src/server.js` for the scoped mount. Do not add root payment routes.
-4. Put official credentials/test-card sources and mock-only scenario controls in `docs/providers/<provider-id>.md`.
-5. Add request/response contract tests for every payment mode, error scenario, and a collision test proving `/providers/<provider-id>/payment/auth` is isolated.
+1. Add the provider's route dispatch to `MockPosController::handle`.
+2. Keep request validation, endpoint routing, response shapes, and test-card rules in dedicated provider methods (extract a provider class when the adapter grows).
+3. Do not register unscoped root payment routes.
+4. Document official credentials/test cards and mock-only controls in `docs/providers/<provider-id>.md`.
+5. Add Laravel Testbench request/response contract tests for success, failure, 3-D completion, reversals, and route isolation.
 
-Shared code should remain provider-neutral: HTTP helpers, in-memory payment state, generic `X-Mock-Payment-Outcome`, health checks, and Docker configuration. Do not infer a provider from a shared payment request body; the configured base URL is the explicit routing boundary.
+Shared package code should remain provider-neutral: the service provider, route-prefix config, in-memory `PaymentStore`, generic `X-Mock-Payment-Outcome` control, and health check. Do not infer a provider from a payment request body; the configured base URL is the routing boundary.
