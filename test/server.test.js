@@ -7,6 +7,7 @@ server.listen(0); await once(server, 'listening');
 const base = `http://127.0.0.1:${server.address().port}`;
 const paytrBase = `${base}/providers/paytr`;
 const iyziBase = `${base}/providers/iyzico`;
+const lidioBase = `${base}/providers/lidio`;
 const iyziHeaders = { authorization: 'IYZWSv2 mock-signature', 'content-type': 'application/json' };
 
 function paytrRequest(overrides = {}) {
@@ -22,6 +23,10 @@ function iyziRequest(overrides = {}) {
     buyer: { id: 'buyer-1', name: 'Mock', surname: 'User', identityNumber: '11111111111', email: 'buyer@example.com', gsmNumber: '+905555555555' },
     billingAddress: { contactName: 'Mock User', city: 'Istanbul', country: 'Turkey', address: 'Mock address', zipCode: '34000' },
     basketItems: [{ id: 'item-1', name: 'Mock item', category1: 'Mock', itemType: 'VIRTUAL', price: 10 }], ...overrides };
+}
+function lidioRequest(overrides = {}) {
+  return { paymentInstrument: 'NewCard', amount: 10, currency: 'TRY', merchantPaymentId: 'lidio-order-1',
+    paymentInstrumentInfo: { newCard: { cardHolderName: 'Mock User', cardNumber: '5528790000000008', expireMonth: '12', expireYear: '30', cvv: '123' } }, ...overrides };
 }
 
 test('health check is available', async () => {
@@ -78,6 +83,21 @@ test('iyzico 3-D initialize then auth completes a payment', async () => {
   const init = await initialized.json(); assert.equal(init.status, 'success'); assert.ok(init.threeDSHtmlContent);
   const completed = await fetch(`${iyziBase}/payment/3dsecure/auth`, { method: 'POST', headers: iyziHeaders, body: JSON.stringify({ paymentId: init.paymentId, conversationId: 'conv-1', conversationData: 'mock-conversation-data' }) });
   const result = await completed.json(); assert.equal(result.status, 'success'); assert.equal(result.mdStatus, 1);
+});
+
+test('Lidio non-3D ProcessPayment returns a completed payment', async () => {
+  const response = await fetch(`${lidioBase}/Payment/ProcessPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(lidioRequest()) });
+  const result = await response.json(); assert.equal(result.result, 'Success'); assert.ok(result.paymentId);
+});
+
+test('Lidio 3-D ProcessPayment redirects, then FinishPaymentProcess completes', async () => {
+  const started = await fetch(`${lidioBase}/Payment/ProcessPayment`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(lidioRequest({ paymentType: '3D', returnUrl: 'https://merchant.test/lidio-return' })) });
+  const pending = await started.json(); assert.equal(pending.result, 'RedirectRequired');
+  const action = pending.RedirectForm.match(/action="([^"]+)"/)[1];
+  const verified = await fetch(`${base}${action}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'code=123456', redirect: 'manual' });
+  assert.equal(verified.status, 302);
+  const completed = await fetch(`${lidioBase}/Payment/FinishPaymentProcess`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: pending.paymentId }) });
+  assert.equal((await completed.json()).result, 'Success');
 });
 
 test.after(() => server.close());

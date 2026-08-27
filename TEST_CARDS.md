@@ -62,4 +62,16 @@ Use one of these values with any otherwise successful card to force a predictabl
 | `034` | `10034` | `FRAUD_SUSPECT` |
 | `220` | `10220` | `DECLINED` |
 
-Sources: [PayTR test cards](https://dev.paytr.com/en/direkt-api/test-kart-bilgileri), [PayTR payment error codes](https://dev.paytr.com/en/hata-kodlari), [iyzico test cards](https://docs.iyzico.com/en/add-ons/test-cards), and [iyzico error codes](https://docs.iyzico.com/en/add-ons/error-codes).
+## Lidio mock controls
+
+Lidio’s public API reference describes the API flow but does not publish a usable test-card/error-card catalog. These are mock-pos controls, not Lidio sandbox credentials.
+
+| Purpose | Card / CVV | Mock result |
+| --- | --- | --- |
+| Success | Any card not ending in `0000` | `result: "Success"` |
+| Insufficient funds | Card ending `0000` or CVV `051` | `result: "Failed"`, `errorCode: "InsufficientFunds"` |
+| Invalid CVV | CVV `084` | `result: "Failed"`, `errorCode: "InvalidCvv"` |
+| 3-D approval | Verification code `123456` | `FinishPaymentProcess` returns `Success` |
+| 3-D decline | Any other verification code | `FinishPaymentProcess` returns `ThreeDSecureNotCompleted` |
+
+Sources: [PayTR test cards](https://dev.paytr.com/en/direkt-api/test-kart-bilgileri), [PayTR payment error codes](https://dev.paytr.com/en/hata-kodlari), [iyzico test cards](https://docs.iyzico.com/en/add-ons/test-cards), [iyzico error codes](https://docs.iyzico.com/en/add-ons/error-codes), and [Lidio API documentation](https://developer.lidio.com/docs/api-documentation/72b66de24898e-introduction).

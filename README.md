@@ -28,6 +28,7 @@ Provider-scoped URLs are the only payment API surface. They prevent endpoint col
 | --- | --- |
 | PayTR | `http://mock-pos:8080/providers/paytr` |
 | iyzico | `http://mock-pos:8080/providers/iyzico` |
+| Lidio | `http://mock-pos:8080/providers/lidio` |
 
 For example, an iyzico client calling `/payment/auth` uses base URL `http://mock-pos:8080/providers/iyzico`, producing `POST /providers/iyzico/payment/auth`. Root payment paths such as `/payment/auth` and `/odeme` intentionally return `404`. A future provider with that same endpoint must be mounted at `http://mock-pos:8080/providers/<provider-id>`. See [the provider integration guide](docs/ADDING_PROVIDER.md).
 
@@ -67,6 +68,18 @@ Use a JSON request and an `Authorization` header beginning with `IYZWSv2 `, just
 The non-3D response contains the commonly consumed iyzico payment fields, including `status`, `paymentId`, `conversationId`, card details, and `itemTransactions`. A failure returns iyzico-style `errorCode: "10051"` and `NOT_SUFFICIENT_FUNDS`.
 
 3-D initialization returns `paymentId` and base64 `threeDSHtmlContent`. Render that content in your test client, submit code `123456`, and the page redirects to `callbackUrl` with `paymentId`, `conversationData`, and `status`. Then call the auth endpoint with `paymentId` to get the final payment result.
+
+## Lidio
+
+Lidio API card payments are available at `http://mock-pos:8080/providers/lidio`. The mock supports Lidio’s API payment flow with a new card (`paymentInstrument: "NewCard"`) only:
+
+| Flow | Endpoint |
+| --- | --- |
+| Non-3D process | `POST /providers/lidio/Payment/ProcessPayment` |
+| Start 3-D process | `POST /providers/lidio/Payment/ProcessPayment` with `paymentType: "3D"` (or `is3DSecure: true`) |
+| Finish 3-D process | `POST /providers/lidio/Payment/FinishPaymentProcess` |
+
+Send `paymentInstrumentInfo.newCard.cardNumber`, plus optional `amount`, `currency`, `merchantPaymentId`, and `returnUrl`. A 3-D start returns `result: "RedirectRequired"`, `paymentId`, and `RedirectForm`; render that HTML, submit code `123456`, then call `FinishPaymentProcess` with `paymentId`. A card ending in `0000`, or mock CVV `051` / `084`, produces deterministic failures. The service aliases `/ProcessPayment` and `/FinishPaymentProcess` under the same provider base URL for clients that use the shorter documented method paths.
 
 ## Local verification
 

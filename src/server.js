@@ -1,10 +1,12 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { scopedProvider } from './providers.js';
+import { createLidioHandler } from './providers/lidio.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const payments = new Map();
 let sequence = 10000000;
+const nextPaymentId = () => String(sequence++);
 
 function now() { return Date.now(); }
 function json(res, code, body) {
@@ -180,6 +182,7 @@ async function handleIyzi3ds(req, res, pathname) {
   url.searchParams.set('status', payment.result.status === 'success' && values.code === '123456' ? 'success' : 'failure');
   res.writeHead(302, { location: url.toString() }); res.end(); return true;
 }
+const lidio = createLidioHandler({ payments, nextPaymentId, json, text, payload, form });
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   if (req.method === 'GET' && pathname === '/health') return json(res, 200, { status: 'ok' });
@@ -192,6 +195,7 @@ const server = createServer(async (req, res) => {
     if (['/payment/auth', '/payment/3dsecure/initialize', '/payment/3dsecure/auth', '/payment/v2/3dsecure/auth'].includes(scoped.pathname)) { await handleIyzi(req, res, scoped.pathname, scoped.mountPath); return; }
     if (req.method === 'POST' && /^\/iyzico\/3ds\/.+$/.test(scoped.pathname)) { await handleIyzi3ds(req, res, scoped.pathname); return; }
   }
+  if (scoped?.id === 'lidio' && lidio.handles(scoped.pathname)) { await lidio.handle(req, res, scoped.pathname, scoped.mountPath); return; }
   if (scoped) return json(res, 404, { error: `Unknown provider or endpoint: ${scoped.id}` });
   json(res, 404, { error: 'Not found' });
 });
