@@ -6,7 +6,8 @@
 export const providers = Object.freeze({
   paytr: { id: 'paytr', mountPath: '/providers/paytr' },
   iyzico: { id: 'iyzico', mountPath: '/providers/iyzico' },
-  lidio: { id: 'lidio', mountPath: '/providers/lidio' }
+  lidio: { id: 'lidio', mountPath: '/providers/lidio' },
+  garanti: { id: 'garanti', mountPath: '/providers/garanti' }
 });
 
 export function scopedProvider(pathname) {

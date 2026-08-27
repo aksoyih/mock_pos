@@ -29,6 +29,7 @@ Provider-scoped URLs are the only payment API surface. They prevent endpoint col
 | PayTR | `http://mock-pos:8080/providers/paytr` |
 | iyzico | `http://mock-pos:8080/providers/iyzico` |
 | Lidio | `http://mock-pos:8080/providers/lidio` |
+| Garanti BBVA | `http://mock-pos:8080/providers/garanti` |
 
 For example, an iyzico client calling `/payment/auth` uses base URL `http://mock-pos:8080/providers/iyzico`, producing `POST /providers/iyzico/payment/auth`. Root payment paths such as `/payment/auth` and `/odeme` intentionally return `404`. A future provider with that same endpoint must be mounted at `http://mock-pos:8080/providers/<provider-id>`. See [the provider integration guide](docs/ADDING_PROVIDER.md).
 
@@ -80,6 +81,17 @@ Lidio API card payments are available at `http://mock-pos:8080/providers/lidio`.
 | Finish 3-D process | `POST /providers/lidio/Payment/FinishPaymentProcess` |
 
 Send `paymentInstrumentInfo.newCard.cardNumber`, plus optional `amount`, `currency`, `merchantPaymentId`, and `returnUrl`. A 3-D start returns `result: "RedirectRequired"`, `paymentId`, and `RedirectForm`; render that HTML, submit code `123456`, then call `FinishPaymentProcess` with `paymentId`. A card ending in `0000`, or mock CVV `051` / `084`, produces deterministic failures. The service aliases `/ProcessPayment` and `/FinishPaymentProcess` under the same provider base URL for clients that use the shorter documented method paths.
+
+## Garanti BBVA Virtual POS
+
+Garanti BBVA uses XML for non-3D and an HTML form for 3-D. Configure the base URL as `http://mock-pos:8080/providers/garanti`.
+
+| Flow | Endpoint |
+| --- | --- |
+| Non-3D sale | `POST /providers/garanti/VPServlet` (`application/xml`) |
+| Start 3-D sale | `POST /providers/garanti/servlet/gt3dengine` (`application/x-www-form-urlencoded`) |
+
+The non-3D XML request must include `Order/OrderID`, `Card/Number`, and `Transaction/Amount`; the response is a Garanti-shaped `GVPSResponse`, with `Transaction/Response/Code` set to `00` on approval. The 3-D form requires `orderid`, `cardnumber`, `txnamount`, `successurl`, and `errorurl`. The mock displays an authentication page; enter Garanti’s published test OTP `147852`. It returns an auto-submitting POST form to `successurl` or `errorurl` with fields such as `mdstatus`, `response`, `procreturncode`, and `orderid`.
 
 ## Local verification
 

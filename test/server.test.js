@@ -8,6 +8,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const paytrBase = `${base}/providers/paytr`;
 const iyziBase = `${base}/providers/iyzico`;
 const lidioBase = `${base}/providers/lidio`;
+const garantiBase = `${base}/providers/garanti`;
 const iyziHeaders = { authorization: 'IYZWSv2 mock-signature', 'content-type': 'application/json' };
 
 function paytrRequest(overrides = {}) {
@@ -98,6 +99,19 @@ test('Lidio 3-D ProcessPayment redirects, then FinishPaymentProcess completes', 
   assert.equal(verified.status, 302);
   const completed = await fetch(`${lidioBase}/Payment/FinishPaymentProcess`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: pending.paymentId }) });
   assert.equal((await completed.json()).result, 'Success');
+});
+
+test('Garanti non-3D VPServlet accepts XML and returns a GVPS approval', async () => {
+  const xml = '<?xml version="1.0"?><GVPSRequest><Card><Number>4282209004348015</Number><ExpireDate>0827</ExpireDate><CVV2>123</CVV2></Card><Order><OrderID>garanti-order-1</OrderID></Order><Transaction><Type>sales</Type><Amount>1000</Amount><CurrencyCode>949</CurrencyCode></Transaction></GVPSRequest>';
+  const response = await fetch(`${garantiBase}/VPServlet`, { method: 'POST', headers: { 'content-type': 'application/xml' }, body: xml });
+  const result = await response.text(); assert.match(result, /<Code>00<\/Code>/); assert.match(result, /garanti-order-1/);
+});
+
+test('Garanti 3-D form uses the official test OTP and posts a success result', async () => {
+  const started = await fetch(`${garantiBase}/servlet/gt3dengine`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ orderid: 'garanti-order-3d', cardnumber: '4282209004348015', txnamount: '1000', successurl: 'https://merchant.test/garanti-success', errorurl: 'https://merchant.test/garanti-error', secure3dsecuritylevel: '3D_PAY' }) });
+  const page = await started.text(); const action = page.match(/action="([^"]+)"/)[1];
+  const completed = await fetch(`${base}${action}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'otp=147852' });
+  const result = await completed.text(); assert.match(result, /merchant\.test\/garanti-success/); assert.match(result, /name="mdstatus" value="1"/);
 });
 
 test.after(() => server.close());

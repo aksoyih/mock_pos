@@ -74,4 +74,15 @@ Lidio’s public API reference describes the API flow but does not publish a usa
 | 3-D approval | Verification code `123456` | `FinishPaymentProcess` returns `Success` |
 | 3-D decline | Any other verification code | `FinishPaymentProcess` returns `ThreeDSecureNotCompleted` |
 
+## Garanti BBVA test cards
+
+| Product | Card number | Expiry (`MMYY`) | CVV | 3-D OTP |
+| --- | --- | --- | --- | --- |
+| Simulator | `4282209004348015` | `0827` | `123` | `147852` |
+| Bonus | `5549600732695519` | `0430` | `244` | `147852` |
+| Troy | `9792290849783014` | `0831` | `865` | `147852` |
+| AMEX | `377599936020011` | `0930` | `380` | `147852` |
+
+The Garanti mock approves these and other card values by default. A card number ending in `0000`, or header `X-Mock-Payment-Outcome: failure`, returns an insufficient-funds-style decline. In 3-D, any OTP other than `147852` produces `mdstatus=0`.
+
 Sources: [PayTR test cards](https://dev.paytr.com/en/direkt-api/test-kart-bilgileri), [PayTR payment error codes](https://dev.paytr.com/en/hata-kodlari), [iyzico test cards](https://docs.iyzico.com/en/add-ons/test-cards), [iyzico error codes](https://docs.iyzico.com/en/add-ons/error-codes), and [Lidio API documentation](https://developer.lidio.com/docs/api-documentation/72b66de24898e-introduction).
