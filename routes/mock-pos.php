@@ -1,6 +1,6 @@
 <?php
 
-use Haluk\MockPos\Http\Controllers\MockPosController;
+use Aksoyih\MockPos\Http\Controllers\MockPosController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', [MockPosController::class, 'health'])->name('mock-pos.health');

@@ -1,6 +1,6 @@
 <?php
 
-namespace Haluk\MockPos;
+namespace Aksoyih\MockPos;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;

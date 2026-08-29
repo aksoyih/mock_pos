@@ -1,8 +1,8 @@
 <?php
 
-namespace Haluk\MockPos\Http\Controllers;
+namespace Aksoyih\MockPos\Http\Controllers;
 
-use Haluk\MockPos\PaymentStore;
+use Aksoyih\MockPos\PaymentStore;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;

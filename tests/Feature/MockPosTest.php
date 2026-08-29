@@ -1,8 +1,8 @@
 <?php
 
-namespace Haluk\MockPos\Tests\Feature;
+namespace Aksoyih\MockPos\Tests\Feature;
 
-use Haluk\MockPos\MockPosServiceProvider;
+use Aksoyih\MockPos\MockPosServiceProvider;
 use Orchestra\Testbench\TestCase;
 
 class MockPosTest extends TestCase
